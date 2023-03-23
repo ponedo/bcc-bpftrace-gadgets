@@ -34,4 +34,17 @@ sudo yum install bcc-tools
 sudo yum install bpftrace
 ```
 
-After installing above, you should be able to run scripts in this repository. It is recommended to add directories of installed BCC scripts, installed bpftrace scripts, and this repository to $PATH.
+After installing above, you should be able to run scripts in this repository.
+
+You may also want to use flamegraph to do profiling. Flamegraph can be downloaded with:
+```bash
+git clone https://github.com/brendangregg/Flamegraph
+```
+
+To draw a flamegraph, do:
+```bash
+profile-new -af 30 -F 99 -p <PIDs> > out.stack
+./flamegraph.pl --color=java < out.stack > out.svg
+```
+
+It is recommended to add directories of installed BCC scripts, installed bpftrace scripts, downloaded flamegraph, and this repository to $PATH.
