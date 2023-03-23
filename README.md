@@ -44,7 +44,7 @@ git clone https://github.com/brendangregg/Flamegraph
 To draw a flamegraph, do:
 ```bash
 profile-new -af 30 -F 99 -p <PIDs> > out.stack
-./flamegraph.pl --color=java < out.stack > out.svg
+flamegraph.pl --color=java < out.stack > out.svg
 ```
 
 It is recommended to add directories of installed BCC scripts, installed bpftrace scripts, downloaded flamegraph, and this repository to $PATH.
