@@ -18,7 +18,7 @@ sudo apt-get install bcc-tools libbcc-examples linux-headers-$(uname -r)
 sudo snap install bcc
 
 # Install bpftrace
-# Option1:
+# Option1: Install at /sbin
 sudo apt-get update
 sudo apt-get install bpftrace
 ```
