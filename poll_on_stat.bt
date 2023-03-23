@@ -1,0 +1,81 @@
+#!/usr/bin/bpftrace
+
+#include <linux/sched.h>
+
+BEGIN
+{
+    printf("Tracing poll... Hit Ctrl-C to end.\n");
+}
+
+
+tracepoint:syscalls:sys_enter_ppoll
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    @poll_enter[comm] = count();
+    @start_first_time[tid] = nsecs;
+    @polling[tid] = 1;
+}
+
+
+tracepoint:sched:sched_switch
+/ (args->prev_comm == "bgpd" || args->prev_comm == "bgpd_io") /
+{
+    @prev_state[comm] = lhist(args->prev_state, 0, 8, 1);
+
+    if (@polling[args->prev_pid] && @start_first_time[args->prev_pid]) {
+        $first_elapsed = nsecs - @start_first_time[args->prev_pid];
+        @oncpu_first_ns[args->prev_pid] = $first_elapsed;
+        @oncpu_first_us[comm] = stats($first_elapsed / 1000);
+        delete(@start_first_time[args->prev_pid]);
+    }
+}
+
+
+tracepoint:sched:sched_switch
+/ (args->next_comm == "bgpd" || args->next_comm == "bgpd_io") /
+{
+    if (@polling[args->next_pid]) {
+        @start_second_time[args->next_pid] = nsecs;
+    }
+}
+
+
+tracepoint:syscalls:sys_exit_ppoll
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    @poll_exit[comm] = count();
+
+    if (@start_second_time[tid]) {
+        $second_elapsed = nsecs - @start_second_time[tid];
+        @oncpu_second_us[comm] = stats($second_elapsed / 1000);
+        $elapsed = $second_elapsed;
+
+        $first_elapsed = @oncpu_first_ns[tid];
+        if ($first_elapsed) {
+            $elapsed += $first_elapsed;
+        }
+        delete(@oncpu_first_ns[tid]);
+
+        @oncpu_twice_us[comm] = stats($elapsed / 1000);
+        @oncpu_us[comm] = stats($elapsed / 1000);
+
+        delete(@start_second_time[tid]);
+    } else if (@start_first_time[tid]) {
+        $elapsed = (nsecs - @start_first_time[tid]);
+        @oncpu_once_us[comm] = stats($elapsed / 1000);
+        @oncpu_us[comm] = stats($elapsed / 1000);
+        
+        delete(@start_first_time[tid]);
+    }
+
+    delete(@polling[tid]);
+}
+
+
+END
+{
+    clear(@oncpu_first_ns);
+    clear(@start_first_time);
+    clear(@start_second_time);
+    clear(@polling);
+}

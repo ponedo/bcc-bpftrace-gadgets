@@ -1,0 +1,35 @@
+#!/usr/bin/bpftrace
+
+BEGIN
+{
+    printf("Tracing poll... Hit Ctrl-C to end.\n");
+	@begin_ns = nsecs;
+}
+
+tracepoint:syscalls:sys_enter_ppoll
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    @start[tid] = nsecs;
+}
+
+tracepoint:syscalls:sys_exit_ppoll
+/ (comm == "bgpd" || comm == "bgpd_io") /
+{
+    $ns = @start[tid];
+    if ($ns) {
+        $usec = (nsecs - $ns) / 1000;
+
+        // @usecs[comm] = hist($usec);
+        @usec_count[comm] = count();
+        @usec_avg[comm] = stats($usec);
+    }
+    delete(@start[tid]);
+}
+
+END
+{
+    clear(@start);
+	@total_elapsed_ms = (nsecs - @begin_ns) / 1000000;
+
+	clear(@begin_ns);
+}

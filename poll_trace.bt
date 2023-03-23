@@ -1,0 +1,56 @@
+#!/usr/bin/bpftrace
+
+#include <linux/sched.h>
+
+BEGIN
+{
+    printf("Tracing poll... Hit Ctrl-C to end.\n");
+    @poll_id = 0;
+}
+
+
+tracepoint:syscalls:sys_enter_ppoll
+/ tid == TID_PLACEHOLDER /
+{
+    $id = @poll_id;
+    @poll_enter_ns[$id] = elapsed;
+    @poll_nfds[$id] = args->nfds;
+}
+
+
+tracepoint:sched:sched_switch
+/ args->prev_pid == TID_PLACEHOLDER /
+{
+    $id = @poll_id;
+    if (@poll_enter_ns[$id]) {
+        @poll_sleep_ns[$id] = elapsed;
+    }
+}
+
+
+tracepoint:sched:sched_switch
+/ args->next_pid == TID_PLACEHOLDER /
+{
+    $id = @poll_id;
+    if (@poll_sleep_ns[$id]) {
+        @poll_wake_ns[$id] = elapsed;
+    }
+}
+
+
+tracepoint:syscalls:sys_exit_ppoll
+/ tid == TID_PLACEHOLDER /
+{
+    $id = @poll_id;
+    if (@poll_enter_ns[$id]) {
+        @poll_exit_ns[$id] = elapsed;
+    }
+    @poll_id = $id + 1;
+}
+
+
+END
+{
+    clear(@poll_id);
+    clear(@poll_nfds);
+}

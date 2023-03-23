@@ -1,0 +1,28 @@
+#!/usr/bin/bpftrace
+BEGIN
+{
+	@begin_ns = nsecs;
+    printf("Monitoring context switches...\n");
+}
+
+
+software:context-switches:1000
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    @context_switches = count();
+}
+
+
+interval:s:1
+{
+    print(@context_switches, 1);
+    zero(@context_switches);
+}
+
+
+END
+{
+	@total_elapsed_us = (nsecs - @begin_ns) / 1000;
+
+	clear(@begin_ns);
+}

@@ -1,0 +1,55 @@
+#!/usr/bin/bpftrace
+
+#include <linux/sched.h>
+
+BEGIN
+{
+    printf("Tracing poll... Hit Ctrl-C to end.\n");
+}
+
+
+tracepoint:syscalls:sys_enter_ppoll
+/ (comm == "bgpd" || comm == "bgpd_io") /
+{
+    @poll_enter[comm] = count();
+    @polling[tid] = 1;
+}
+
+
+tracepoint:sched:sched_switch
+/ (args->prev_comm == "bgpd" || args->prev_comm == "bgpd_io") /
+{
+    if (@polling[args->prev_pid]) {
+        @sleep[args->prev_comm] = count();
+        @sleep_start[args->prev_pid] = nsecs;
+    }
+}
+
+
+tracepoint:sched:sched_switch
+/ (args->next_comm == "bgpd" || args->next_comm == "bgpd_io") /
+{
+	if (@polling[args->next_pid]) {
+        $sleep_start_ns = @sleep_start[args->next_pid];
+        if ($sleep_start_ns) {
+            $sleeped_us = (nsecs - $sleep_start_ns) / 1000;
+            @sleep_elapsed_us[args->next_comm] = stats($sleeped_us);
+        }
+        delete(@sleep_start[args->next_pid]);
+	}
+}
+
+
+tracepoint:syscalls:sys_exit_ppoll
+/ (comm == "bgpd" || comm == "bgpd_io") /
+{
+    @poll_exit[comm] = count();
+    delete(@polling[tid]);
+}
+
+
+END
+{
+    clear(@sleep_start);
+    clear(@polling);
+}

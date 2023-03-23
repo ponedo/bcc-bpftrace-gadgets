@@ -1,0 +1,12 @@
+#!/usr/bin/bpftrace
+BEGIN
+{
+    printf("Monitoring context switches...\n");
+}
+
+
+profile:hz:49
+/ cpu == 28 /
+{
+    @threads[comm] = count();
+}

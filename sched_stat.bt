@@ -1,0 +1,28 @@
+#!/usr/bin/bpftrace
+BEGIN
+{
+	@begin_ns = nsecs;
+    printf("Monitoring schedule functions in kernel...\n");
+}
+
+
+kprobe:schedule
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    @times[func] = count();
+}
+
+
+kprobe:schedule_*
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    @times[func] = count();
+}
+
+
+END
+{
+	@total_elapsed_us = (nsecs - @begin_ns) / 1000;
+
+	clear(@begin_ns);
+}

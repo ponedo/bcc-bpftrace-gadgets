@@ -1,0 +1,19 @@
+#!/usr/bin/bpftrace
+
+#include <signal.h>
+
+BEGIN
+{
+    printf("Tracing poll... Hit Ctrl-C to end.\n");
+}
+
+tracepoint:syscalls:sys_enter_ppoll
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    @nfds[comm] = lhist(args->nfds, 6, 256, 1);
+    @nfds_stats[comm] = stats(args->nfds);
+}
+
+END
+{
+}

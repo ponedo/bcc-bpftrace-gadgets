@@ -1,0 +1,115 @@
+#!/usr/bin/bpftrace
+
+#include <linux/sched.h>
+
+BEGIN
+{
+	@begin_ns = nsecs;
+    printf("Tracing poll... Hit Ctrl-C to end.\n");
+}
+
+
+tracepoint:syscalls:sys_enter_ppoll
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    @poll_enter[comm] = count();
+    @poll_enter_time[tid] = nsecs;
+}
+
+
+tracepoint:syscalls:sys_enter_ppoll
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+	@start_first_time[tid] = nsecs;
+    @polling[tid] = 1;
+}
+
+
+tracepoint:sched:sched_switch
+/ (args->prev_comm == "bgpd" || args->prev_comm == "bgpd_io") /
+{
+    if (@polling[args->prev_pid] && @start_first_time[args->prev_pid]) {
+        $first_elapsed = nsecs - @start_first_time[args->prev_pid];
+        @oncpu_first_ns[args->prev_pid] = $first_elapsed;
+        @oncpu_first_us[comm] = stats($first_elapsed / 1000);
+        delete(@start_first_time[args->prev_pid]);
+
+        @sleep_start[args->prev_pid] = nsecs;
+    }
+}
+
+
+tracepoint:sched:sched_switch
+/ (args->next_comm == "bgpd" || args->next_comm == "bgpd_io") /
+{
+    if (@polling[args->next_pid]) {
+        @start_second_time[args->next_pid] = nsecs;
+		
+        $sleep_start_ns = @sleep_start[args->next_pid];
+        if ($sleep_start_ns) {
+            $sleeped_us = (nsecs - $sleep_start_ns) / 1000;
+            @sleep_elapsed_us[args->next_comm] = stats($sleeped_us);
+			delete(@sleep_start[args->next_pid]);
+        }
+    }
+}
+
+
+tracepoint:syscalls:sys_exit_ppoll
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    @poll_exit[comm] = count();
+
+	if (@poll_enter_time[tid]) {
+		$poll_elapsed = nsecs - @poll_enter_time[tid];
+		@poll_elapsed_us[comm] = stats($poll_elapsed / 1000);
+		delete(@poll_enter_time[tid]);
+	}
+}
+
+
+tracepoint:syscalls:sys_exit_ppoll
+/ comm == "bgpd" || comm == "bgpd_io" /
+{
+    if (@start_second_time[tid]) {
+        $second_elapsed = nsecs - @start_second_time[tid];
+        @oncpu_second_us[comm] = stats($second_elapsed / 1000);
+        $elapsed = $second_elapsed;
+
+        $first_elapsed = @oncpu_first_ns[tid];
+        if ($first_elapsed) {
+            $elapsed += $first_elapsed;
+        }
+        delete(@oncpu_first_ns[tid]);
+
+        @oncpu_twice_us[comm] = stats($elapsed / 1000);
+        @oncpu_us[comm] = stats($elapsed / 1000);
+
+        delete(@start_second_time[tid]);
+    } else if (@start_first_time[tid]) {
+        $elapsed = (nsecs - @start_first_time[tid]);
+        @oncpu_once_us[comm] = stats($elapsed / 1000);
+        @oncpu_us[comm] = stats($elapsed / 1000);
+        
+        delete(@start_first_time[tid]);
+    }
+	
+    delete(@polling[tid]);
+}
+
+
+END
+{
+	@total_elapsed_us = (nsecs - @begin_ns) / 1000;
+
+	clear(@begin_ns);
+
+    clear(@oncpu_first_ns);
+    clear(@start_first_time);
+    clear(@start_second_time);
+
+    clear(@sleep_start);
+
+    clear(@poll_enter_time);
+    clear(@polling);
+}
