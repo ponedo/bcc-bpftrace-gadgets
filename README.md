@@ -43,7 +43,12 @@ git clone https://github.com/brendangregg/Flamegraph
 
 To draw a flamegraph, do:
 ```bash
-profile-new -af 30 -F 99 -p <PIDs> > out.stack
+# For Ubuntu
+profile-bpfcc-new -af 30 -F 99 -p <PIDs> > out.stack
+# For RHEL
+profile-bpfcc -af 30 -F 99 -p <PIDs> > out.stack
+
+# Draw flamegraph
 flamegraph.pl --color=java < out.stack > out.svg
 ```
 
